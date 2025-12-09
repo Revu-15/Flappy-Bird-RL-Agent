@@ -1,70 +1,106 @@
-#Note: Below functions borrowed from course 3MD4120: Reinforcement Learning provided supporting files at CentraleSupélec.
-
-
-
-#!/usr/bin/env python
-
-"""An abstract class that specifies the Agent API for RL-Glue-py.
-"""
-
-from __future__ import print_function
-from abc import ABCMeta, abstractmethod
-
+import numpy as np
 
 class BaseAgent:
-    """Implements the agent for an RL-Glue environment.
-    Note:
-        agent_init, agent_start, agent_step, agent_end, agent_cleanup, and
-        agent_message are required methods.
+    """
+    Abstract Base class for RL agents (RL-Glue style).
+    You may extend or replace this with your course-provided version.
     """
 
-    __metaclass__ = ABCMeta
+    def agent_init(self, agent_info={}):
+        raise NotImplementedError
 
-    def __init__(self):
+    def agent_start(self, observation):
+        raise NotImplementedError
+
+    def agent_step(self, reward, observation):
+        raise NotImplementedError
+
+    def agent_end(self, reward):
+        raise NotImplementedError
+
+    def agent_cleanup(self):
         pass
 
-    @abstractmethod
-    def agent_init(self, agent_info= {}):
-        """Setup for the agent called when the experiment first starts."""
-
-    @abstractmethod
-    def agent_start(self, observation):
-        """The first method called when the experiment starts, called after
-        the environment starts.
-        Args:
-            observation (Numpy array): the state observation from the environment's evn_start function.
-        Returns:
-            The first action the agent takes.
-        """
-
-    @abstractmethod
-    def agent_step(self, reward, observation):
-        """A step taken by the agent.
-        Args:
-            reward (float): the reward received for taking the last action taken
-            observation (Numpy array): the state observation from the
-                environment's step based, where the agent ended up after the
-                last step
-        Returns:
-            The action the agent is taking.
-        """
-
-    @abstractmethod
-    def agent_end(self, reward):
-        """Run when the agent terminates.
-        Args:
-            reward (float): the reward the agent received for entering the terminal state.
-        """
-
-    @abstractmethod
-    def agent_cleanup(self):
-        """Cleanup done after the agent ends."""
-
-    @abstractmethod
     def agent_message(self, message):
-        """A function used to pass information from the agent to the experiment.
-        Args:
-            message: The message passed to the agent.
-        Returns:
-            The response (or answer) to the message.
-        """
+        return None
+
+
+class FlappyAgent(BaseAgent):
+    """
+    Flappy Bird Agent supporting:
+    - Q-Learning
+    - Expected SARSA
+    """
+
+    def agent_init(self, agent_info={}):
+        self.alpha = agent_info.get("alpha", 0.1)
+        self.gamma = agent_info.get("gamma", 0.99)
+        self.epsilon = agent_info.get("epsilon", 0.1)
+        self.algorithm = agent_info.get("algorithm", "Q-Learning")
+
+        self.num_actions = agent_info.get("num_actions", 2)
+
+        # Q-table dictionary
+        self.Q = {}
+
+    def _epsilon_greedy(self, state):
+        if np.random.rand() < self.epsilon or state not in self.Q:
+            return np.random.randint(self.num_actions)
+
+        return np.argmax(self.Q[state])
+
+    def agent_start(self, observation):
+        state = tuple(np.round(observation, 1))
+        self.Q.setdefault(state, np.zeros(self.num_actions))
+
+        action = self._epsilon_greedy(state)
+
+        self.last_state = state
+        self.last_action = action
+
+        return action
+
+    def agent_step(self, reward, observation):
+        next_state = tuple(np.round(observation, 1))
+        self.Q.setdefault(next_state, np.zeros(self.num_actions))
+
+        a = self.last_action
+        s = self.last_state
+        s_next = next_state
+
+        # -------- Q-Learning Update --------
+        if self.algorithm == "Q-Learning":
+            td_target = reward + self.gamma * np.max(self.Q[s_next])
+            self.Q[s][a] += self.alpha * (td_target - self.Q[s][a])
+
+        # -------- Expected SARSA Update --------
+        else:
+            policy = np.ones(self.num_actions) * (self.epsilon / self.num_actions)
+            best = np.argmax(self.Q[s_next])
+            policy[best] += 1 - self.epsilon
+
+            expected_value = np.dot(policy, self.Q[s_next])
+
+            td_target = reward + self.gamma * expected_value
+            self.Q[s][a] += self.alpha * (td_target - self.Q[s][a])
+
+        # choose next action
+        action = self._epsilon_greedy(s_next)
+
+        self.last_state = s_next
+        self.last_action = action
+
+        return action
+
+    def agent_end(self, reward):
+        s = self.last_state
+        a = self.last_action
+
+        td_target = reward  # terminal state
+
+        self.Q[s][a] += self.alpha * (td_target - self.Q[s][a])
+
+    def agent_message(self, message):
+        if message == "get-Q":
+            return self.Q
+        return None
