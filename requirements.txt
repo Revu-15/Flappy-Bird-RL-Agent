@@ -1,0 +1,7 @@
+streamlit
+numpy
+matplotlib
+gym
+pygame
+flappy-bird-gymnasium
+pillow
